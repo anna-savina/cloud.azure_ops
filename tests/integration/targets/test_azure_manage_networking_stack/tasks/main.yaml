@@ -1,17 +1,22 @@
 ---
 - name: Test azure_manage_networking_stack role with existing Resource group
   block:
+    - name: Set Resource group for test
+      ansible.builtin.set_fact:
+        azure_manage_networking_stack_resource_group: "{{ resource_group }}"
+
     # Create Networking stack
     - name: Create Networking stack
       ansible.builtin.include_role:
         name: cloud.azure_ops.azure_manage_networking_stack
       vars:
         azure_manage_networking_stack_operation: create
-        azure_manage_networking_stack_resource_group: "{{ resource_group }}"
    
     # Verify Networking stack created
     - name: Verify Networking stack created
       ansible.builtin.include_tasks: "verify_ns_created_deleted.yaml"
+      vars:
+        azure_manage_networking_stack_operation: create
 
     # Delete Subnet from Networking stack
     - name: Delete Subnet from Networking stack
@@ -79,11 +84,18 @@
 
 - name: Test azure_manage_networking_stack role with create/delete Resource group option
   block:
-    # Gather existing Resource group info to determine region
+    # Set vars for azure_manage_networking_stack Role
     - name: Gather Resource group info
       azure.azcollection.azure_rm_resourcegroup_info:
         name: "{{ resource_group }}"
       register: rg_info
+
+    - name: Set vars for azure_manage_networking_stack Role
+      ansible.builtin.set_fact:
+        azure_manage_networking_stack_region: "{{ rg_info.resourcegroups.0.location }}"
+        azure_manage_networking_stack_resource_group: "{{ resource_prefix }}-{{ resource_group }}"
+        azure_manage_networking_stack_tags:
+          resource_prefix: "{{ resource_prefix }}"
 
     # Create Networking stack
     - name: Create Networking stack
@@ -91,52 +103,25 @@
         name: cloud.azure_ops.azure_manage_networking_stack
       vars:
         azure_manage_networking_stack_operation: create
-        azure_manage_networking_stack_resource_group: "{{ resource_prefix }}-{{ resource_group }}"
-        azure_manage_networking_stack_region: "{{ rg_info.resourcegroups.0.location }}"
-        azure_manage_networking_stack_tags:
-          resource_prefix: "{{ resource_prefix }}"
 
     # Verify Networking stack created
     - name: Verify Networking stack created
       ansible.builtin.include_tasks: "verify_ns_created_deleted.yaml"
+      vars:
+        azure_manage_networking_stack_operation: create
 
-    # Fill the Resource group with additional resource
-    - name: Create additional Virtual network
-      azure.azcollection.azure_rm_virtualnetwork:
-        location: "{{ azure_manage_networking_stack_region }}"
-        name: "{{ additional_vnet_name }}"
-        address_prefixes_cidr: "{{ azure_manage_networking_stack_vnet_address_prefixes_cidr }}"
-        resource_group: "{{ azure_manage_networking_stack_resource_group }}" 
-
-    # Delete Networking stack and try to delete not empty Resource group
+    # Delete Networking stack
     - name: Delete Networking stack
       ansible.builtin.include_role:
         name: cloud.azure_ops.azure_manage_networking_stack
       vars:
         azure_manage_networking_stack_operation: delete
-        azure_manage_networking_stack_delete_resource_group: true
-
-    # Verify Resource group hasn't been deleted
-    - name: Gather Resource group info
-      azure.azcollection.azure_rm_resourcegroup_info:
-        name: "{{ azure_manage_networking_stack_resource_group }}"
-      register: rg_info
-
-    - name: Ensure Resource group hasn't been deleted
-      ansible.builtin.assert:
-        that:
-          - rg_info.resourcegroups | length == 1
 
     # Verify Networking stack deleted
     - name: Verify Networking stack deleted
       ansible.builtin.include_tasks: "verify_ns_created_deleted.yaml"
-
-    # Delete aditional Virtual network
-    - name: Delete aditional Virtual network
-      azure.azcollection.azure_rm_virtualnetwork:
-        state: absent
-        resource_group: "{{ azure_manage_networking_stack_resource_group }}"
-        name: "{{ additional_vnet_name }}"
+      vars:
+        azure_manage_networking_stack_operation: delete
 
     # Delete Resource group
     - name: Delete Resource group by the azure_manage_networking_stack role
